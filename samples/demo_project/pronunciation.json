@@ -1,0 +1,51 @@
+{
+  "format_version": 1,
+  "rules": [
+    {
+      "pattern": "স্থানাঙ্ক(?!ের)",
+      "replacement": "স্থানাঙ্কো"
+    },
+    {
+      "pattern": "উপকেন্দ্র",
+      "replacement": "উপোকেন্দ্র",
+      "note": "upokendro"
+    },
+    {
+      "pattern": "নিয়ামক",
+      "replacement": "নিয়ামোক",
+      "note": "niyamok"
+    },
+    {
+      "pattern": "অপশন",
+      "replacement": "অপ্শন",
+      "note": "opshon"
+    },
+    {
+      "pattern": "লম্ব(?![া-ৌ্])",
+      "replacement": "লম্বো",
+      "note": "lombo"
+    },
+    {
+      "pattern": "বর্গ(?![া-ৌ্])",
+      "replacement": "বর্গো",
+      "note": "borgo"
+    },
+    {
+      "pattern": "দশ(?![া-ৌ্])",
+      "replacement": "দোশ",
+      "note": "dosh"
+    },
+    {
+      "pattern": "স(?!্)",
+      "replacement": "শ",
+      "note": "স is spoken sh unless part of a conjunct"
+    }
+  ],
+  "keep_s": [
+    "এক্স",
+    "মাইনাস",
+    "প্লাস",
+    "সাইন",
+    "কস"
+  ]
+}

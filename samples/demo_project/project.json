@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "name": "Demo",
+  "scene_order": [
+    "DemoParabola"
+  ],
+  "voice": "bn-BD-PradeepNeural",
+  "rate": "+4%",
+  "font_bn": "Noto Sans Bengali",
+  "pad": 0.25,
+  "narrate": true,
+  "default_run_time": 1.0,
+  "final_fps": 30,
+  "bangla_numerals_on_screen": false,
+  "beat_render_mode": "skip"
+}

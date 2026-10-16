@@ -1,0 +1,19 @@
+name: bms
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - ffmpeg
+  - pango
+  - cairo
+  - pycairo
+  - pkg-config
+  - pip:
+      - manim
+      - edge-tts
+      - pydub
+      - PySide6
+      - psutil
+      - pytest
+      - -e .
