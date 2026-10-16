@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import copy
+import re
 from pathlib import Path
 
 from bms import jsonio
+
+_SCENE_ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 DEFAULT_SETTINGS: dict = {
     "format_version": 1,
@@ -134,8 +137,8 @@ class Project:
         src = Path(src)
         data = jsonio.load_json(src)
         scene_id = data.get("scene_id")
-        if not isinstance(scene_id, str) or not scene_id:
-            raise ValueError("scene_id is required")
+        if not isinstance(scene_id, str) or not _SCENE_ID_RE.fullmatch(scene_id):
+            raise ValueError("invalid scene_id")
         dest = self.scene_path(scene_id)
         if dest.exists() and not overwrite:
             raise FileExistsError(f"scene already exists: {dest}")
