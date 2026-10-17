@@ -287,6 +287,25 @@ def test_compile_expr_spec_examples():
     assert abs(f(1.0) - 1.0) < 1e-9
 
 
+def test_compile_expr_pow_exponent_bound():
+    assert compile_expr("x**64")(2.0) == pytest.approx(2.0**64)
+    assert compile_expr("x**-64")(2.0) == pytest.approx(2.0**-64)
+    with pytest.raises(ValueError):
+        compile_expr("x**65")
+    with pytest.raises(ValueError):
+        compile_expr("x**-65")
+    with pytest.raises(ValueError):
+        compile_expr("2**100")
+    # a non-constant exponent is not bounded here
+    assert compile_expr("x**x")(1.0) == pytest.approx(1.0)
+
+
+def test_compile_expr_node_count_bound():
+    assert compile_expr(" + ".join(["x"] * 20))(1.0) == pytest.approx(20.0)
+    with pytest.raises(ValueError):
+        compile_expr(" + ".join(["x"] * 300))
+
+
 @pytest.mark.parametrize(
     "expr",
     [
@@ -496,7 +515,7 @@ def test_e117_direct_target_while_group_alive():
     assert issue.field == "children"
 
 
-def test_e117_not_fired_after_group_fades():
+def test_e117_fired_when_group_already_faded():
     sc = scene(
         objects={
             "a": {"type": "mathtex", "tex": "x"},
@@ -513,8 +532,39 @@ def test_e117_not_fired_after_group_fades():
             }
         ],
     )
-    assert "E117" not in codes(sc)
+    (issue,) = only(sc, "E117")
+    assert issue.object_id == "g"
+    assert issue.field == "children"
     assert "E116" not in codes(sc)
+
+
+def test_e117_direct_child_target_regardless_of_order():
+    # target child before the group is ever shown
+    sc = scene(
+        objects={
+            "a": {"type": "mathtex", "tex": "x"},
+            "g": {"type": "group", "children": ["a"]},
+        },
+        beats=[{"id": "b", "steps": [{"anim": "Write", "targets": ["a"]}]}],
+    )
+    (issue,) = only(sc, "E117")
+    assert issue.object_id == "g"
+
+    # target child in the same step that would show the group
+    sc = scene(
+        objects={
+            "a": {"type": "mathtex", "tex": "x"},
+            "g": {"type": "group", "children": ["a"]},
+        },
+        beats=[
+            {
+                "id": "b",
+                "steps": [{"anim": "Write", "targets": ["g", "a"]}],
+            }
+        ],
+    )
+    (issue,) = only(sc, "E117")
+    assert issue.object_id == "g"
 
 
 def test_replacement_transform_aliveness():

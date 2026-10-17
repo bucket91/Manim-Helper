@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from bms import __version__
+from bms.engine.audio import make_audio
 from bms.project import Project
 from bms.schema import format_issue, validate_project
 
@@ -55,6 +56,26 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return 1 if n_errors else 0
 
 
+def _cmd_speak(args: argparse.Namespace) -> int:
+    try:
+        project = Project.open(Path(args.project_dir))
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
+    try:
+        wav_path = make_audio(
+            args.text,
+            project.settings,
+            project.pronunciation,
+            project.subdir("narration_cache"),
+        )
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    print(str(wav_path))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bms", description="Bangla Manim Studio")
     parser.add_argument("--version", action="version", version=f"bms {__version__}")
@@ -75,6 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("project_dir", help="project directory to validate")
     p_validate.add_argument("--scene", metavar="ID", help="validate only this scene")
     p_validate.set_defaults(func=_cmd_validate)
+
+    p_speak = sub.add_parser("speak", help="synthesize narration audio for text")
+    p_speak.add_argument("project_dir", help="existing project directory")
+    p_speak.add_argument("--text", required=True, help="text to speak")
+    p_speak.set_defaults(func=_cmd_speak)
 
     return parser
 

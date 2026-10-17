@@ -51,6 +51,28 @@ _EXPR_FUNCS: dict[str, Callable[..., float]] = {
 _EXPR_CONSTS: dict[str, float] = {"pi": math.pi, "e": math.e}
 _EXPR_NAMES: frozenset[str] = frozenset({"x", "pi", "e"})
 
+_MAX_EXPR_NODES = 200
+_MAX_POW_EXPONENT = 64
+
+
+def _const_abs(node: ast.AST) -> float | None:
+    """Absolute value of a numeric constant node (optionally unary-wrapped)."""
+    if isinstance(node, ast.Constant):
+        value = node.value
+    elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        inner = node.operand
+        if not isinstance(inner, ast.Constant):
+            return None
+        value = inner.value
+        if isinstance(node.op, ast.USub) and not isinstance(value, bool):
+            if isinstance(value, (int, float)):
+                value = -value
+    else:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return abs(value)
+
 
 def compile_expr(expr: str) -> Callable[[float], float]:
     if not isinstance(expr, str):
@@ -59,13 +81,23 @@ def compile_expr(expr: str) -> Callable[[float], float]:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
         raise ValueError(f"invalid expression: {exc.msg}") from None
+    nodes = list(ast.walk(tree))
+    if len(nodes) > _MAX_EXPR_NODES:
+        raise ValueError(
+            f"expression is too complex: {len(nodes)} nodes (max {_MAX_EXPR_NODES})"
+        )
+    for node in nodes:
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+            exp_abs = _const_abs(node.right)
+            if exp_abs is not None and exp_abs > _MAX_POW_EXPONENT:
+                raise ValueError(f"exponent is too large: {exp_abs}")
     call_func_names: set[str] = set()
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, ast.Call):
             func = node.func
             if isinstance(func, ast.Name):
                 call_func_names.add(func.id)
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, ast.Expression):
             continue
         if isinstance(node, ast.BinOp) and isinstance(
@@ -797,7 +829,7 @@ def validate_scene(scene: dict, settings: dict) -> list[Issue]:
                     )
             for t in targets:
                 gid = child_group.get(t)
-                if gid is not None and gid in alive:
+                if gid is not None:
                     step_issue(
                         "E117",
                         "error",
