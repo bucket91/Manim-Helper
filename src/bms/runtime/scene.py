@@ -69,9 +69,18 @@ class BmsScene(Scene):
         for index, beat in enumerate(beats):
             beat_id = beat.get("id")
             emit_progress(beat_id, index, total)
-            if self.mode == "scene":
+            if self.mode == "frame":
+                if beat_id == self.beat_id:
+                    self.next_section("target", skip_animations=False)
+                    self._t_offset = self._now()
+                    self._run_beat(beat, evaluate_narration=False)
+                    break
+                else:
+                    self.next_section(f"skip_{beat_id}", skip_animations=True)
+                    self._run_beat(beat, evaluate_narration=False)
+            elif self.mode == "scene":
                 self._run_beat(beat, evaluate_narration=self.narrate)
-            elif beat_id == self.beat_id:
+            elif self.mode == "beat" and beat_id == self.beat_id:
                 self.next_section("target", skip_animations=False)
                 self._t_offset = self._now()
                 self._run_beat(beat, evaluate_narration=self.narrate)
@@ -81,6 +90,8 @@ class BmsScene(Scene):
                 self._run_beat(beat, evaluate_narration=False)
 
         self._write_master_track()
+        BmsScene.bms_timing = self.bms_timing
+        BmsScene.last_timing = self.bms_timing
 
     def _add_divider(self) -> None:
         import manim

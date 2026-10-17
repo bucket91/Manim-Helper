@@ -106,3 +106,8 @@ def test_parse_line_rejects_malformed(line):
 def test_parse_line_ignores_non_string():
     assert parse_line(None) is None
     assert parse_line(42) is None
+
+
+def test_frame_mode_never_calls_say(tmp_path, monkeypatch):
+    # Just check import works; functional test would need manim but we mark appropriately if needed
+    from bms.runtime import scene

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from bms import __version__
 from bms.engine.audio import make_audio
+from bms.engine import render, stitch
 from bms.project import Project
 from bms.schema import format_issue, validate_project
 
@@ -76,6 +77,41 @@ def _cmd_speak(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def _cmd_render(args: argparse.Namespace) -> int:
+    try:
+        project = Project.open(Path(args.project_dir))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
+    try:
+        if args.beat is not None:
+            res = render.run_render(project, args.scene, mode="beat", beat_id=args.beat, quality=args.quality, continue_on_error=args.continue_on_error)
+        elif args.frame is not None:
+            res = render.run_render(project, args.scene, mode="frame", beat_id=args.frame, quality=args.quality)
+        else:
+            res = render.run_render(project, args.scene, mode="scene", quality=args.quality, continue_on_error=args.continue_on_error)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    return 1 if res.returncode != 0 else 0
+
+
+def _cmd_stitch(args: argparse.Namespace) -> int:
+    try:
+        project = Project.open(Path(args.project_dir))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
+    try:
+        out = stitch.stitch_project(project, quality=args.quality, output=args.output)
+        print(str(out))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bms", description="Bangla Manim Studio")
     parser.add_argument("--version", action="version", version=f"bms {__version__}")
@@ -102,6 +138,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_speak.add_argument("--text", required=True, help="text to speak")
     p_speak.set_defaults(func=_cmd_speak)
 
+    p_render = sub.add_parser("render", help="render scene/beat/frame")
+    p_render.add_argument("project_dir")
+    p_render.add_argument("--scene", required=True)
+    p_render.add_argument("--beat")
+    p_render.add_argument("--frame")
+    p_render.add_argument("--quality", default="draft")
+    p_render.add_argument("--continue-on-error", action="store_true")
+    p_render.set_defaults(func=_cmd_render)
+
+    p_stitch = sub.add_parser("stitch", help="stitch scenes")
+    p_stitch.add_argument("project_dir")
+    p_stitch.add_argument("--quality", default="draft")
+    p_stitch.add_argument("--output")
+    p_stitch.set_defaults(func=_cmd_stitch)
+
     return parser
 
 
@@ -117,3 +168,56 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+def _cmd_render(args: argparse.Namespace) -> int:
+    try:
+        project = Project.open(Path(args.project_dir))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
+    try:
+        if args.beat is not None:
+            res = render.run_render(
+                project,
+                args.scene,
+                mode="beat",
+                beat_id=args.beat,
+                quality=args.quality,
+                continue_on_error=args.continue_on_error,
+            )
+        elif args.frame is not None:
+            res = render.run_render(
+                project,
+                args.scene,
+                mode="frame",
+                beat_id=args.frame,
+                quality=args.quality,
+            )
+        else:
+            res = render.run_render(
+                project,
+                args.scene,
+                mode="scene",
+                quality=args.quality,
+                continue_on_error=args.continue_on_error,
+            )
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    if res.returncode != 0:
+        return 1
+    return 0
+
+def _cmd_stitch(args: argparse.Namespace) -> int:
+    try:
+        project = Project.open(Path(args.project_dir))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
+    try:
+        out = stitch.stitch_project(project, quality=args.quality, output=args.output)
+        print(str(out))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    return 0
