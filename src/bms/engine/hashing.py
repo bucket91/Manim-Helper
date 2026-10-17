@@ -12,6 +12,7 @@ _HASH_SETTINGS_KEYS: tuple[str, ...] = (
     "pad",
     "narrate",
     "bangla_numerals_on_screen",
+    "default_run_time",
 )
 
 
@@ -73,6 +74,7 @@ def beat_hash(scene: dict, beat_id: str, settings: dict, pron: dict) -> str:
         "beat": beat,
         "objects": _referenced_objects(scene, beat),
         "layout": scene.get("layout") if isinstance(scene, dict) else None,
+        "background": scene.get("background") if isinstance(scene, dict) else None,
         "settings": _settings_subset(settings),
         "pron": pron,
     }

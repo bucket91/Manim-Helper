@@ -77,6 +77,28 @@ def test_beat_hash_changes_on_rate():
     assert beat_hash(scene, "b1", settings, DEFAULT_PRONUNCIATION) != h1
 
 
+def test_beat_hash_changes_on_default_run_time():
+    scene = _scene()
+    h1 = beat_hash(scene, "b1", _settings(), DEFAULT_PRONUNCIATION)
+    settings = _settings()
+    settings["default_run_time"] = 2.5
+    assert beat_hash(scene, "b1", settings, DEFAULT_PRONUNCIATION) != h1
+
+
+def test_beat_hash_changes_on_background():
+    scene = _scene()
+    h1 = beat_hash(scene, "b1", _settings(), DEFAULT_PRONUNCIATION)
+    scene["background"] = "black"
+    assert beat_hash(scene, "b1", _settings(), DEFAULT_PRONUNCIATION) != h1
+
+
+def test_settings_hash_changes_on_default_run_time():
+    settings = _settings()
+    h1 = settings_hash(settings, DEFAULT_PRONUNCIATION)
+    settings["default_run_time"] = 2.5
+    assert settings_hash(settings, DEFAULT_PRONUNCIATION) != h1
+
+
 def test_beat_hash_ignores_unrelated_object():
     scene = _scene()
     settings = _settings()

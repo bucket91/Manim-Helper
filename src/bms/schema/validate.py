@@ -74,6 +74,33 @@ def _const_abs(node: ast.AST) -> float | None:
     return abs(value)
 
 
+_EXPONENT_ERROR = (
+    "power exponent may only contain numeric literals, x, pi, e and +, -, *, /"
+)
+
+
+def _validate_pow_exponent(node: ast.AST) -> None:
+    """Reject nested powers and any construct unsafe to evaluate in an exponent."""
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
+            raise ValueError(f"invalid exponent constant: {node.value!r}")
+        return
+    if isinstance(node, ast.Name):
+        if node.id not in _EXPR_NAMES:
+            raise ValueError(f"unknown name in exponent: {node.id!r}")
+        return
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        _validate_pow_exponent(node.operand)
+        return
+    if isinstance(node, ast.BinOp) and isinstance(
+        node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)
+    ):
+        _validate_pow_exponent(node.left)
+        _validate_pow_exponent(node.right)
+        return
+    raise ValueError(_EXPONENT_ERROR)
+
+
 def compile_expr(expr: str) -> Callable[[float], float]:
     if not isinstance(expr, str):
         raise ValueError("expr must be a string")
@@ -88,6 +115,7 @@ def compile_expr(expr: str) -> Callable[[float], float]:
         )
     for node in nodes:
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+            _validate_pow_exponent(node.right)
             exp_abs = _const_abs(node.right)
             if exp_abs is not None and exp_abs > _MAX_POW_EXPONENT:
                 raise ValueError(f"exponent is too large: {exp_abs}")

@@ -300,6 +300,25 @@ def test_compile_expr_pow_exponent_bound():
     assert compile_expr("x**x")(1.0) == pytest.approx(1.0)
 
 
+def test_compile_expr_rejects_nested_pow():
+    with pytest.raises(ValueError):
+        compile_expr("9**9**9")
+    with pytest.raises(ValueError):
+        compile_expr("2**(3**4)")
+    with pytest.raises(ValueError):
+        compile_expr("x**sin(pi)")
+    with pytest.raises(ValueError):
+        compile_expr("x**(y)")
+
+
+def test_compile_expr_allows_safe_exponents():
+    assert compile_expr("2**x")(3.0) == pytest.approx(8.0)
+    assert compile_expr("e**x")(1.0) == pytest.approx(2.718281828, rel=1e-6)
+    assert compile_expr("x**(1/2)")(4.0) == pytest.approx(2.0)
+    assert compile_expr("x**-2")(2.0) == pytest.approx(0.25)
+    assert compile_expr("x**(pi)")(1.0) == pytest.approx(1.0)
+
+
 def test_compile_expr_node_count_bound():
     assert compile_expr(" + ".join(["x"] * 20))(1.0) == pytest.approx(20.0)
     with pytest.raises(ValueError):
