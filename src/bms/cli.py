@@ -78,14 +78,13 @@ def _cmd_speak(args: argparse.Namespace) -> int:
     return 0
 
 
-
 def _emit_render_errors(errors: list[dict]) -> None:
     translate = None
     try:
         from bms.diagnostics.errors import translate_error  # type: ignore
 
         translate = translate_error
-    except ImportError:
+    except Exception:
         translate = None
     for error in errors:
         raw = json.dumps(error, ensure_ascii=False)
@@ -167,6 +166,55 @@ def _cmd_stitch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_diff(args: argparse.Namespace) -> int:
+    try:
+        from bms.tracking import diff as diff_mod
+        from bms.tracking import report as report_mod
+
+        project = Project.open(Path(args.project_dir))
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
+    known = set(project.scene_ids())
+    if args.scene is not None:
+        if args.scene not in known:
+            print(f"error: unknown scene id: {args.scene}", file=sys.stderr)
+            return 64
+        changes = diff_mod.compute_changes(project, scene_id=args.scene)
+    else:
+        changes = diff_mod.compute_changes(project)
+    if not changes:
+        print("No changes.")
+        return 0
+    text = report_mod.build_report(project, changes)
+    print(text, end="")
+    return 0
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    try:
+        from bms.tracking import diff as diff_mod
+        from bms.tracking import report as report_mod
+
+        project = Project.open(Path(args.project_dir))
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
+    try:
+        path = report_mod.export_report(project, mark=not args.no_mark)
+    except ValueError as exc:
+        if str(exc) == "no changes":
+            print("No changes.")
+            return 0
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
+    print(str(path))
+    return 0
+
+
 class _Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:  # noqa: D401
         self.print_usage(sys.stderr)
@@ -218,6 +266,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_stitch.add_argument("--out")
     p_stitch.set_defaults(func=_cmd_stitch)
 
+    p_diff = sub.add_parser("diff", help="show changes since last report")
+    p_diff.add_argument("project_dir")
+    p_diff.add_argument("--scene", metavar="ID", help="diff only this scene")
+    p_diff.set_defaults(func=_cmd_diff)
+
+    p_report = sub.add_parser("report", help="write change report and mark reported")
+    p_report.add_argument("project_dir")
+    p_report.add_argument("--no-mark", action="store_true", help="do not mark baselines reported")
+    p_report.set_defaults(func=_cmd_report)
+
     return parser
 
 
@@ -233,4 +291,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
