@@ -18,4 +18,5 @@ def test_frame_mode_no_audio():
         shutil.copytree(sample, proj_dir)
         p = Project.open(proj_dir)
         res = render.run_render(p, "DemoParabola", mode="frame", beat_id="method", quality="draft")
-        assert res.returncode == 0
+        assert res.exit_code == 0
+        assert res.ok

@@ -88,38 +88,46 @@ def settings_hash(settings: dict, pron: dict) -> str:
 
 
 def stale_status(project, scene_id: str, quality: str) -> dict:
-    from bms import jsonio
-
     scene = project.load_scene(scene_id)
     renders_dir = project.subdir("renders")
     scene_render_dir = renders_dir / scene_id / quality
     manifest_path = scene_render_dir / "manifest.json"
     video_path = scene_render_dir / "scene.mp4"
-    result: dict = {"scene_stale": True, "beats": {}}
+
     beats_list = scene.get("beats") if isinstance(scene, dict) else []
-    beat_ids = []
+    beat_ids: list[str] = []
     if isinstance(beats_list, list):
-        for b in beats_list:
-            if isinstance(b, dict) and b.get("id"):
-                beat_ids.append(str(b["id"]))
-    result["beats"] = {bid: True for bid in beat_ids}
+        for beat in beats_list:
+            if isinstance(beat, dict) and beat.get("id") is not None:
+                beat_ids.append(str(beat["id"]))
+
+    result: dict = {"scene_stale": True, "beats": {bid: True for bid in beat_ids}}
     if not manifest_path.exists() or not video_path.exists():
         return result
     try:
         manifest = jsonio.load_json(manifest_path)
     except Exception:
         return result
-    if manifest.get("scene_hash") != settings_hash(project.settings, project.pronunciation):
+    if manifest.get("settings_hash") != settings_hash(
+        project.settings, project.pronunciation
+    ):
         return result
-    if list(manifest.get("beat_ids") or []) != list(beat_ids):
+    stored = manifest.get("beat_hashes")
+    if not isinstance(stored, dict):
         return result
-    result["scene_stale"] = False
-    beats_manifest = manifest.get("beats") or {}
+    if list(stored.keys()) != beat_ids:
+        return result
+
+    any_stale = False
     for bid in beat_ids:
         try:
-            bh = beat_hash(scene, bid, project.settings, project.pronunciation)
+            current = beat_hash(scene, bid, project.settings, project.pronunciation)
         except Exception:
             result["beats"][bid] = True
+            any_stale = True
             continue
-        result["beats"][bid] = beats_manifest.get(bid) != bh
+        changed = stored.get(bid) != current
+        result["beats"][bid] = changed
+        any_stale = any_stale or changed
+    result["scene_stale"] = any_stale
     return result

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from bms import __version__
 from bms.engine.audio import make_audio
 from bms.engine import render, stitch
-from bms.project import Project
+from bms.project import QUALITIES, Project
 from bms.schema import format_issue, validate_project
 
 
@@ -78,23 +79,74 @@ def _cmd_speak(args: argparse.Namespace) -> int:
 
 
 
+def _emit_render_errors(errors: list[dict]) -> None:
+    translate = None
+    try:
+        from bms.diagnostics.errors import translate_error  # type: ignore
+
+        translate = translate_error
+    except ImportError:
+        translate = None
+    for error in errors:
+        raw = json.dumps(error, ensure_ascii=False)
+        if translate is not None:
+            try:
+                info = translate(raw)
+            except Exception:
+                info = None
+            if isinstance(info, dict):
+                title = info.get("title") or ""
+                hint = info.get("hint") or ""
+                print(f"{title}: {hint}".strip(": ") if hint else title)
+                continue
+        print(raw)
+
+
 def _cmd_render(args: argparse.Namespace) -> int:
     try:
         project = Project.open(Path(args.project_dir))
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 64
-    try:
-        if args.beat is not None:
-            res = render.run_render(project, args.scene, mode="beat", beat_id=args.beat, quality=args.quality, continue_on_error=args.continue_on_error)
-        elif args.frame is not None:
-            res = render.run_render(project, args.scene, mode="frame", beat_id=args.frame, quality=args.quality)
-        else:
-            res = render.run_render(project, args.scene, mode="scene", quality=args.quality, continue_on_error=args.continue_on_error)
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 3
-    return 1 if res.returncode != 0 else 0
+
+    if args.scene is not None:
+        scene_ids = [args.scene]
+    else:
+        scene_ids = project.scene_ids()
+    known = set(project.scene_ids())
+    for scene_id in scene_ids:
+        if scene_id not in known:
+            print(f"error: unknown scene id: {scene_id}", file=sys.stderr)
+            return 64
+
+    if args.frame is not None:
+        mode, beat_id = "frame", args.frame
+    elif args.beat is not None:
+        mode, beat_id = "beat", args.beat
+    else:
+        mode, beat_id = "scene", None
+
+    failed = False
+    for scene_id in scene_ids:
+        try:
+            result = render.run_render(
+                project,
+                scene_id,
+                args.quality,
+                mode=mode,
+                beat_id=beat_id,
+                continue_on_error=args.continue_on_error,
+                debug=args.debug,
+            )
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 3
+        _emit_render_errors(result.errors)
+        if result.output is not None:
+            print(str(result.output))
+        if result.exit_code != 0:
+            failed = True
+    return 2 if failed else 0
 
 
 def _cmd_stitch(args: argparse.Namespace) -> int:
@@ -104,16 +156,25 @@ def _cmd_stitch(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 64
     try:
-        out = stitch.stitch_project(project, quality=args.quality, output=args.output)
-        print(str(out))
+        out = stitch.stitch(project, args.quality, out=args.out)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
+    print(str(out))
     return 0
 
 
+class _Parser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:  # noqa: D401
+        self.print_usage(sys.stderr)
+        self.exit(64, f"{self.prog}: error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="bms", description="Bangla Manim Studio")
+    parser = _Parser(prog="bms", description="Bangla Manim Studio")
     parser.add_argument("--version", action="version", version=f"bms {__version__}")
     sub = parser.add_subparsers(dest="command")
 
@@ -140,17 +201,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_render = sub.add_parser("render", help="render scene/beat/frame")
     p_render.add_argument("project_dir")
-    p_render.add_argument("--scene", required=True)
-    p_render.add_argument("--beat")
-    p_render.add_argument("--frame")
-    p_render.add_argument("--quality", default="draft")
+    target = p_render.add_mutually_exclusive_group(required=True)
+    target.add_argument("--scene", metavar="ID")
+    target.add_argument("--all", action="store_true", help="render every scene")
+    p_render.add_argument("--quality", required=True, choices=list(QUALITIES))
+    pick = p_render.add_mutually_exclusive_group()
+    pick.add_argument("--beat", metavar="ID")
+    pick.add_argument("--frame", metavar="ID")
     p_render.add_argument("--continue-on-error", action="store_true")
+    p_render.add_argument("--debug", action="store_true")
     p_render.set_defaults(func=_cmd_render)
 
     p_stitch = sub.add_parser("stitch", help="stitch scenes")
     p_stitch.add_argument("project_dir")
-    p_stitch.add_argument("--quality", default="draft")
-    p_stitch.add_argument("--output")
+    p_stitch.add_argument("--quality", required=True, choices=list(QUALITIES))
+    p_stitch.add_argument("--out")
     p_stitch.set_defaults(func=_cmd_stitch)
 
     return parser
@@ -169,55 +234,3 @@ def main(argv: list[str] | None = None) -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 
-def _cmd_render(args: argparse.Namespace) -> int:
-    try:
-        project = Project.open(Path(args.project_dir))
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 64
-    try:
-        if args.beat is not None:
-            res = render.run_render(
-                project,
-                args.scene,
-                mode="beat",
-                beat_id=args.beat,
-                quality=args.quality,
-                continue_on_error=args.continue_on_error,
-            )
-        elif args.frame is not None:
-            res = render.run_render(
-                project,
-                args.scene,
-                mode="frame",
-                beat_id=args.frame,
-                quality=args.quality,
-            )
-        else:
-            res = render.run_render(
-                project,
-                args.scene,
-                mode="scene",
-                quality=args.quality,
-                continue_on_error=args.continue_on_error,
-            )
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 3
-    if res.returncode != 0:
-        return 1
-    return 0
-
-def _cmd_stitch(args: argparse.Namespace) -> int:
-    try:
-        project = Project.open(Path(args.project_dir))
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 64
-    try:
-        out = stitch.stitch_project(project, quality=args.quality, output=args.output)
-        print(str(out))
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 3
-    return 0

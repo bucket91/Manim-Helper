@@ -1,45 +1,49 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import tempfile
 from pathlib import Path
-from typing import List
 
+from bms.engine.hashing import stale_status
 from bms.procutil import run_hidden
 from bms.project import Project
 
 
-def _escape_single_quote(s: str) -> str:
-    return s.replace("'", "'\\''")
+def _escape_single_quote(value: str) -> str:
+    return value.replace("'", "'\\''")
 
 
-def stitch_project(
-    project: Project,
-    quality: str = "draft",
-    output: Path | None = None,
-) -> Path:
+def stitch(project: Project, quality: str, out: Path | None = None) -> Path:
     renders_dir = project.subdir("renders")
-    scene_order = project.settings.get("scene_order") or project.scene_ids()
-    missing = []
-    for sid in scene_order:
-        video = renders_dir / sid / quality / "scene.mp4"
-        if not video.exists():
-            missing.append(sid)
-    if missing:
-        raise RuntimeError(f"missing renders for scenes: {', '.join(missing)}")
+    scene_order = list(project.settings.get("scene_order") or project.scene_ids())
 
-    out = Path(output) if output else (renders_dir / "_project" / quality / "project.mp4")
-    out.parent.mkdir(parents=True, exist_ok=True)
+    missing: list[str] = []
+    videos: list[Path] = []
+    for scene_id in scene_order:
+        video = renders_dir / scene_id / quality / "scene.mp4"
+        try:
+            is_stale = bool(stale_status(project, scene_id, quality).get("scene_stale"))
+        except Exception:
+            is_stale = True
+        if not video.exists() or is_stale:
+            missing.append(scene_id)
+        else:
+            videos.append(video)
+    if missing:
+        raise RuntimeError(
+            f"missing or stale scene renders: {', '.join(missing)}"
+        )
+
+    output = Path(out) if out else (renders_dir / "_project" / quality / "project.mp4")
+    output.parent.mkdir(parents=True, exist_ok=True)
 
     fd, list_path = tempfile.mkstemp(
-        dir=str(out.parent), prefix="concat_", suffix=".txt"
+        dir=str(output.parent), prefix="concat_", suffix=".txt"
     )
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            for sid in scene_order:
-                video = renders_dir / sid / quality / "scene.mp4"
-                fh.write(f"file '{_escape_single_quote(str(video))}'\n")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            for video in videos:
+                handle.write(f"file '{_escape_single_quote(str(video))}'\n")
         run_hidden(
             [
                 "ffmpeg",
@@ -52,7 +56,7 @@ def stitch_project(
                 str(list_path),
                 "-c",
                 "copy",
-                str(out),
+                str(output),
             ]
         )
     finally:
@@ -60,4 +64,4 @@ def stitch_project(
             os.unlink(list_path)
         except OSError:
             pass
-    return out
+    return output

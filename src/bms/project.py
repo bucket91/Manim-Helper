@@ -72,7 +72,7 @@ def quality_params(settings: dict, quality: str) -> tuple[int, int, int]:
 
 class Project:
     def __init__(self, root: Path, settings: dict, pronunciation: dict) -> None:
-        self.root = Path(root)
+        self.root = Path(root).resolve()
         self.settings = settings
         self.pronunciation = pronunciation
 

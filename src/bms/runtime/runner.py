@@ -1,180 +1,255 @@
 from __future__ import annotations
 
-import json
-import sys
+import datetime
 import os
+import sys
 from pathlib import Path
 
 from bms import jsonio
-from bms.engine.audio import audio_duration, make_audio
+from bms.engine import hashing
 from bms.project import Project
-from bms.runtime.protocol import emit_error, emit_progress
+from bms.runtime.protocol import emit_error, emit_warn
 from bms.schema import format_issue, validate_scene
-from manim import config as manim_config
 from manim import tempconfig
 
 
-def _move_outputs(scene_id: str, quality: str, renders_dir: Path) -> None:
-    import os
-    import shutil
-    scene_dir = renders_dir / scene_id / quality
-    scene_dir.mkdir(parents=True, exist_ok=True)
-    found_mp4 = False
-    search_paths = ['.', str(renders_dir.parent.parent), os.getcwd()]
-    for sp in search_paths:
-        for root, dirs, files in os.walk(sp):
-            for f in files:
-                if f.endswith('.mp4') and 'BmsScene' in f:
-                    src = Path(root) / f
-                    dst = scene_dir / 'scene.mp4'
-                    try:
-                        dst.unlink(missing_ok=True)
-                        src.replace(dst)
-                        found_mp4 = True
-                    except Exception:
-                        pass
-                    if found_mp4:
-                        break
-            if found_mp4:
-                break
-    found_png = False
-    for sp in search_paths:
-        for root, dirs, files in os.walk(sp):
-            for f in files:
-                if f.startswith('BmsScene') and f.endswith('.png'):
-                    src = Path(root) / f
-                    dst = scene_dir / ('frame_' + f.split('_')[-1] if '_' in f else '0.png')
-                    try:
-                        dst.unlink(missing_ok=True)
-                        src.replace(dst)
-                        found_png = True
-                    except Exception:
-                        pass
-                    if found_png:
-                        break
-            if found_png:
-                break
-    for d in ['media', 'assets', 'videos', 'images', 'partial_movie_files']:
-        shutil.rmtree(d, ignore_errors=True)
+def _newest(media_dir: Path, suffix: str) -> Path | None:
+    best: Path | None = None
+    for path in media_dir.rglob(f"*{suffix}"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if best is None or mtime > best.stat().st_mtime:
+            best = path
+    return best
+
+
+def _dest_path(out_dir: Path, mode: str, beat_id: str | None) -> Path:
+    if mode == "frame":
+        return out_dir / f"frame_{beat_id}.png"
+    if mode == "beat":
+        return out_dir / f"beat_{beat_id}.mp4"
+    return out_dir / "scene.mp4"
+
+
+def _locate_output(scene, mode: str, media_dir: Path) -> Path | None:
+    file_writer = getattr(scene.renderer, "file_writer", None)
+    if file_writer is not None:
+        attr = "image_file_path" if mode == "frame" else "movie_file_path"
+        try:
+            raw = getattr(file_writer, attr)
+        except Exception:
+            raw = None
+        if raw is not None:
+            candidate = Path(raw)
+            if candidate.exists():
+                return candidate
+    return _newest(media_dir, ".png" if mode == "frame" else ".mp4")
+
+
+def _write_or_warn(path: Path, data: dict) -> None:
+    try:
+        jsonio.save_json_atomic(path, data)
+    except Exception:
+        emit_warn("write_failed", file=path.name)
+
+
+def _finish(ok: bool, code: int) -> int:
+    print(f"BMS_DONE|ok={1 if ok else 0}")
+    sys.stdout.flush()
+    return code
 
 
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
-        emit_error({
-            "kind": "other",
-            "scene_id": None,
-            "beat_id": None,
-            "object_id": None,
-            "step_index": None,
-            "message": "missing render spec path",
-        })
-        return 2
+        emit_error(
+            {
+                "kind": "other",
+                "scene_id": None,
+                "beat_id": None,
+                "object_id": None,
+                "step_index": None,
+                "message": "missing render spec path",
+            }
+        )
+        return _finish(False, 2)
     spec_path = Path(argv[1])
     try:
         spec = jsonio.load_json(spec_path)
     except Exception as exc:
-        emit_error({
-            "kind": "other",
-            "scene_id": None,
-            "beat_id": None,
-            "object_id": None,
-            "step_index": None,
-            "message": f"cannot read spec: {exc}",
-        })
-        return 2
+        emit_error(
+            {
+                "kind": "other",
+                "scene_id": None,
+                "beat_id": None,
+                "object_id": None,
+                "step_index": None,
+                "message": f"cannot read spec: {exc}",
+            }
+        )
+        return _finish(False, 2)
+
     project_root = spec.get("project_root")
     scene_id = spec.get("scene_id")
     if not project_root or not scene_id:
-        emit_error({
-            "kind": "other",
-            "scene_id": scene_id,
-            "beat_id": None,
-            "object_id": None,
-            "step_index": None,
-            "message": "invalid spec: missing project_root or scene_id",
-        })
-        return 2
-    try:
-        project = Project.open(Path(project_root))
-        scene_data = project.load_scene(scene_id)
-    except Exception as exc:
-        emit_error({
-            "kind": "other",
-            "scene_id": scene_id,
-            "beat_id": None,
-            "object_id": None,
-            "step_index": None,
-            "message": f"cannot load scene: {exc}",
-        })
-        return 2
-    issues = validate_scene(scene_data, project.settings)
-    errors = [i for i in issues if i.level == "error"]
-    if errors:
-        for issue in errors:
-            emit_error({
+        emit_error(
+            {
                 "kind": "other",
                 "scene_id": scene_id,
                 "beat_id": None,
                 "object_id": None,
                 "step_index": None,
-                "message": format_issue(issue),
-            })
-        print("BMS_DONE|ok=0")
-        sys.stdout.flush()
-        return 2
+                "message": "invalid spec: missing project_root or scene_id",
+            }
+        )
+        return _finish(False, 2)
+
+    try:
+        project = Project.open(Path(project_root))
+        scene_data = project.load_scene(scene_id)
+    except Exception as exc:
+        emit_error(
+            {
+                "kind": "other",
+                "scene_id": scene_id,
+                "beat_id": None,
+                "object_id": None,
+                "step_index": None,
+                "message": f"cannot load scene: {exc}",
+            }
+        )
+        return _finish(False, 2)
+
+    issues = validate_scene(scene_data, project.settings)
+    errors = [issue for issue in issues if issue.level == "error"]
+    if errors:
+        for issue in errors:
+            emit_error(
+                {
+                    "kind": "other",
+                    "scene_id": scene_id,
+                    "beat_id": None,
+                    "object_id": None,
+                    "step_index": None,
+                    "message": format_issue(issue),
+                }
+            )
+        return _finish(False, 2)
+
     mode = spec.get("mode", "scene")
     quality = spec.get("quality", "draft")
     beat_id = spec.get("beat_id")
-    config = spec.get("manim_config") or {}
-    config["output_file"] = "BmsScene"
-    manim_config.update(config)
-    from bms.runtime import scene  # noqa
-    scene.BmsScene.bms_spec = {
-        "project_root": str(project_root),
-        "scene_id": scene_id,
-        "mode": mode,
-        "beat_id": beat_id,
-        "continue_on_error": bool(spec.get("continue_on_error", False)),
-        "debug": bool(spec.get("debug", False)),
+    width = int(spec.get("width", 854))
+    height = int(spec.get("height", 480))
+    fps = int(spec.get("fps", 15))
+    out_dir = Path(spec.get("out_dir") or (project.subdir("renders") / scene_id / quality))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    media_dir = out_dir / "_media"
+
+    config = {
+        "pixel_width": width,
+        "pixel_height": height,
+        "frame_rate": fps,
+        "media_dir": str(media_dir),
+        "output_file": "BmsScene",
+        "verbosity": "WARNING",
+        "disable_caching": False,
+        "save_last_frame": mode == "frame",
     }
+
+    from bms.runtime import scene as scene_module  # noqa: PLC0415
+
     try:
-        from manim import tempconfig
         with tempconfig(config):
-            scene.BmsScene().render()
+            bms_scene = scene_module.BmsScene()
+            bms_scene.bms_spec = dict(spec)
+            bms_scene.render()
     except Exception as exc:
-        emit_error({
-            "kind": "other",
-            "scene_id": scene_id,
-            "beat_id": None,
-            "object_id": None,
-            "step_index": None,
-            "message": str(exc)[:2000],
-        })
-        print("BMS_DONE|ok=0")
-        sys.stdout.flush()
-        return 1
-    renders_dir = project.subdir("renders")
-    _move_outputs(scene_id, quality, renders_dir)
-    if mode == "scene":
-        timing_path = renders_dir / scene_id / quality / "timing.json"
-        try:
-            from bms.engine import hashing
-            timing = getattr(scene.BmsScene, "bms_timing", [])
-            jsonio.save_json_atomic(timing_path, timing)
-            manifest = {
-                "scene_hash": hashing.settings_hash(project.settings, project.pronunciation),
-                "beat_ids": [b["id"] for b in (scene_data.get("beats") or []) if isinstance(b, dict)],
-                "beats": {},
+        emit_error(
+            {
+                "kind": "other",
+                "scene_id": scene_id,
+                "beat_id": beat_id,
+                "object_id": None,
+                "step_index": None,
+                "message": str(exc)[:2000],
             }
-            for b in manifest["beat_ids"]:
-                manifest["beats"][b] = hashing.beat_hash(scene_data, b, project.settings, project.pronunciation)
-            jsonio.save_json_atomic(renders_dir / scene_id / quality / "manifest.json", manifest)
+        )
+        return _finish(False, 2)
+
+    source = _locate_output(bms_scene, mode, media_dir)
+    if source is not None:
+        dest = _dest_path(out_dir, mode, beat_id)
+        try:
+            os.replace(source, dest)
         except Exception:
-            pass
-    print("BMS_DONE|ok=1")
-    sys.stdout.flush()
-    return 0
+            emit_warn("write_failed", file=dest.name)
+
+    if mode == "scene":
+        timing_beats = [
+            beat
+            for beat in getattr(scene_module.BmsScene, "bms_timing", [])
+            if isinstance(beat, dict)
+        ]
+        timing = {
+            "scene_id": scene_id,
+            "quality": quality,
+            "fps": fps,
+            "beats": [
+                {
+                    "id": beat.get("id"),
+                    "start": round(float(beat.get("start", 0.0)), 3),
+                    "end": round(float(beat.get("end", 0.0)), 3),
+                }
+                for beat in timing_beats
+            ],
+            "total": (
+                round(float(timing_beats[-1].get("end", 0.0)), 3)
+                if timing_beats
+                else 0.0
+            ),
+        }
+        _write_or_warn(out_dir / "timing.json", timing)
+
+        beat_ids = [
+            str(beat["id"])
+            for beat in (scene_data.get("beats") or [])
+            if isinstance(beat, dict) and beat.get("id") is not None
+        ]
+        manifest = {
+            "rendered_at": datetime.datetime.now().astimezone().isoformat(),
+            "settings_hash": hashing.settings_hash(
+                project.settings, project.pronunciation
+            ),
+            "beat_hashes": {
+                beat_id_: hashing.beat_hash(
+                    scene_data, beat_id_, project.settings, project.pronunciation
+                )
+                for beat_id_ in beat_ids
+            },
+        }
+        _write_or_warn(out_dir / "manifest.json", manifest)
+
+    return _finish(True, 0)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    try:
+        _code = main(sys.argv)
+    except SystemExit:
+        raise
+    except BaseException as _exc:  # noqa: BLE001
+        emit_error(
+            {
+                "kind": "other",
+                "scene_id": None,
+                "beat_id": None,
+                "object_id": None,
+                "step_index": None,
+                "message": f"runner crashed: {_exc}",
+            }
+        )
+        print("BMS_DONE|ok=0")
+        _code = 2
+    raise SystemExit(_code)

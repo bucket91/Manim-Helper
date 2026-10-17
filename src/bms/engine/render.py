@@ -1,102 +1,84 @@
 from __future__ import annotations
 
 import datetime
-import json
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List
 
 from bms import jsonio
-from bms.engine.hashing import stale_status
 from bms.procutil import popen_hidden
-from bms.project import Project
+from bms.project import Project, quality_params
 from bms.runtime.protocol import parse_line
 
 
 @dataclass
 class RenderResult:
-    returncode: int
+    ok: bool
+    exit_code: int
+    output: Path | None
+    log_path: Path
     errors: List[dict] = field(default_factory=list)
-    warnings: List[dict] = field(default_factory=list)
-    log_path: Path | None = None
-
-
-def quality_params(quality: str, final_fps: int) -> dict:
-    q = (quality or "draft").lower()
-    if q == "final":
-        fps = int(final_fps) if final_fps in (30, 60) else 60
-        return {
-            "quality": "high_quality",
-            "progress_bar": "none",
-            "frame_rate": fps,
-        }
-    if q == "medium":
-        fps = int(final_fps) if final_fps in (30, 60) else 30
-        return {
-            "quality": "medium_quality",
-            "progress_bar": "none",
-            "frame_rate": fps,
-        }
-    return {
-        "quality": "low_quality",
-        "progress_bar": "none",
-        "frame_rate": 15,
-    }
+    warnings: List[str] = field(default_factory=list)
 
 
 def build_render_spec(
     project: Project,
     scene_id: str,
-    mode: str = "scene",
-    beat_id: str | None = None,
-    quality: str = "draft",
-    continue_on_error: bool = False,
-    debug: bool = False,
+    quality: str,
+    mode: str,
+    beat_id: str | None,
+    continue_on_error: bool,
+    debug: bool,
 ) -> dict:
-    spec = {
+    width, height, fps = quality_params(project.settings, quality)
+    out_dir = project.subdir("renders") / scene_id / quality
+    return {
         "project_root": str(project.root),
         "scene_id": scene_id,
         "mode": mode,
         "beat_id": beat_id,
         "quality": quality,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "out_dir": str(out_dir),
         "continue_on_error": continue_on_error,
         "debug": debug,
-        "narrate": project.settings.get("narrate", True),
-        "manim_config": {},
     }
-    params = quality_params(quality, project.settings.get("final_fps", 30))
-    spec["manim_config"] = params
-    if mode == "frame" and beat_id is not None:
-        spec["manim_config"]["save_last_frame"] = True
-    return spec
+
+
+def _expected_output(out_dir: Path, mode: str, beat_id: str | None) -> Path:
+    if mode == "frame":
+        return out_dir / f"frame_{beat_id}.png"
+    if mode == "beat":
+        return out_dir / f"beat_{beat_id}.mp4"
+    return out_dir / "scene.mp4"
 
 
 def run_render(
     project: Project,
     scene_id: str,
+    quality: str,
     mode: str = "scene",
     beat_id: str | None = None,
-    quality: str = "draft",
     continue_on_error: bool = False,
     debug: bool = False,
     on_line: Callable[[str], None] | None = None,
 ) -> RenderResult:
     spec = build_render_spec(
-        project, scene_id, mode, beat_id, quality, continue_on_error, debug
+        project, scene_id, quality, mode, beat_id, continue_on_error, debug
     )
     renders_dir = project.subdir("renders")
     log_dir = project.subdir("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
     spec_dir = renders_dir / scene_id / quality
     spec_dir.mkdir(parents=True, exist_ok=True)
-    spec_path = spec_dir / "render_spec.json"
+    spec_path = (spec_dir / "render_spec.json").resolve()
     jsonio.save_json_atomic(spec_path, spec)
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = log_dir / f"render_{scene_id}_{ts}.log"
-    result = RenderResult(returncode=0, log_path=log_path)
+    result = RenderResult(ok=False, exit_code=0, output=None, log_path=log_path)
 
     proc = popen_hidden(
         [sys.executable, "-m", "bms.runtime.runner", str(spec_path)],
@@ -105,11 +87,15 @@ def run_render(
     try:
         with open(log_path, "w", encoding="utf-8") as logf:
             for line in proc.stdout:
+                line_str = (
+                    line
+                    if isinstance(line, str)
+                    else line.decode("utf-8", errors="replace")
+                )
                 try:
-                    logf.write(line)
+                    logf.write(line_str)
                 except Exception:
                     pass
-                line_str = line if isinstance(line, str) else line.decode("utf-8", errors="replace")
                 if on_line:
                     try:
                         on_line(line_str)
@@ -121,14 +107,16 @@ def run_render(
                 if parsed.get("type") == "error":
                     result.errors.append(parsed.get("error") or {})
                 elif parsed.get("type") == "warn":
-                    kind = parsed.get("kind", "unknown")
-                    fields = parsed.get("fields") or {}
-                    result.warnings.append({"kind": kind, "fields": fields})
+                    result.warnings.append(line_str.strip())
         proc.wait()
     finally:
         try:
             proc.terminate()
         except Exception:
             pass
-    result.returncode = proc.returncode
+    result.exit_code = proc.returncode if proc.returncode is not None else 1
+
+    output = _expected_output(Path(spec["out_dir"]), mode, beat_id)
+    result.output = output if output.exists() else None
+    result.ok = result.exit_code == 0
     return result
