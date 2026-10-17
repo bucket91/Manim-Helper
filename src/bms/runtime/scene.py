@@ -66,6 +66,7 @@ class BmsScene(Scene):
 
         beats = [beat for beat in (self.scene_data.get("beats") or []) if isinstance(beat, dict)]
         total = len(beats)
+        narrate_setting = bool(self.settings.get("narrate", True))
         for index, beat in enumerate(beats):
             beat_id = beat.get("id")
             emit_progress(beat_id, index, total)
@@ -79,11 +80,11 @@ class BmsScene(Scene):
                     self.next_section(f"skip_{beat_id}", skip_animations=True)
                     self._run_beat(beat, evaluate_narration=False)
             elif self.mode == "scene":
-                self._run_beat(beat, evaluate_narration=self.narrate)
+                self._run_beat(beat, evaluate_narration=narrate_setting)
             elif self.mode == "beat" and beat_id == self.beat_id:
                 self.next_section("target", skip_animations=False)
                 self._t_offset = self._now()
-                self._run_beat(beat, evaluate_narration=self.narrate)
+                self._run_beat(beat, evaluate_narration=narrate_setting)
                 break
             else:
                 self.next_section(f"skip_{beat_id}", skip_animations=True)
