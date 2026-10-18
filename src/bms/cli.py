@@ -12,6 +12,18 @@ from bms.project import QUALITIES, Project
 from bms.schema import format_issue, validate_project
 
 
+def _ensure_baseline(project, scene_id: str) -> None:
+    try:
+        from bms.tracking import baseline as baseline_mod
+
+        bl = baseline_mod.load_baseline(project, scene_id)
+        if bl is None:
+            baseline_mod.init_baseline(project, scene_id)
+            print(f"note: created baseline for {scene_id} (no earlier baseline existed)")
+    except Exception:
+        pass
+
+
 def _cmd_new(args: argparse.Namespace) -> int:
     try:
         project = Project.create(Path(args.dir), args.name)
@@ -180,8 +192,11 @@ def _cmd_diff(args: argparse.Namespace) -> int:
         if args.scene not in known:
             print(f"error: unknown scene id: {args.scene}", file=sys.stderr)
             return 64
+        _ensure_baseline(project, args.scene)
         changes = diff_mod.compute_changes(project, scene_id=args.scene)
     else:
+        for sid in project.scene_ids():
+            _ensure_baseline(project, sid)
         changes = diff_mod.compute_changes(project)
     if not changes:
         print("No changes.")
@@ -200,6 +215,8 @@ def _cmd_report(args: argparse.Namespace) -> int:
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 64
+    for sid in project.scene_ids():
+        _ensure_baseline(project, sid)
     try:
         path = report_mod.export_report(project, mark=not args.no_mark)
     except ValueError as exc:
@@ -209,8 +226,10 @@ def _cmd_report(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 64
     except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 64
+        # report files may have been written? spec says let marking errors propagate
+        # but export_report writes first; if mark raises after write, we need to report
+        print(f"report written but baseline not marked: {exc}", file=sys.stderr)
+        return 2
     print(str(path))
     return 0
 

@@ -81,7 +81,12 @@ def build_report(project, changes: list, now=None) -> str:
                     beat_order.append(str(b["id"]))
         beat_pos = {bid: i for i, bid in enumerate(beat_order)}
         narr_ch.sort(key=lambda c: beat_pos.get(getattr(c, "beat_id", None) or (c.get("beat_id") if isinstance(c, dict) else None), 10**9))
-        obj_ch_sorted = sorted(obj_ch, key=lambda c: (getattr(c, "object_id", None) or (c.get("object_id") if isinstance(c, dict) else ""), getattr(c, "field", None) or (c.get("field") if isinstance(c, dict) else "")))
+        obj_order_cur = list(cur.get("objects", {}).keys()) if isinstance(cur, dict) and isinstance(cur.get("objects"), dict) else []
+        obj_pos = {oid: i for i, oid in enumerate(obj_order_cur)}
+        obj_ch_sorted = sorted(obj_ch, key=lambda c: (
+            obj_pos.get(getattr(c, "object_id", None) or (c.get("object_id") if isinstance(c, dict) else ""), 10**9),
+            getattr(c, "field", None) or (c.get("field") if isinstance(c, dict) else ""),
+        ))
         clean.append(f"## {sid}")
         try:
             from bms.tracking import baseline as baseline_mod

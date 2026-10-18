@@ -48,7 +48,7 @@ def compute_changes(project, scene_id: str | None = None) -> list[Change]:
         except Exception:
             continue
         if baseline is None:
-            continue  # no baseline, so no changes to report against last reported
+            continue
 
         def beat_map(beats):
             m = {}
@@ -67,7 +67,7 @@ def compute_changes(project, scene_id: str | None = None) -> list[Change]:
             bid = str(b["id"])
             bb = bm.get(bid)
             if not isinstance(bb, dict):
-                continue  # present in only one -> structure note
+                continue
             bn_cur = b.get("narration")
             bn_base = bb.get("narration")
             if isinstance(bn_cur, str) and isinstance(bn_base, str):
@@ -93,13 +93,14 @@ def compute_changes(project, scene_id: str | None = None) -> list[Change]:
             base_objs = {}
         if not isinstance(cur_objs, dict):
             cur_objs = {}
-        for obj_id in sorted(cur_objs.keys()):
+        obj_order_cur = list(cur_objs.keys()) if isinstance(cur_objs, dict) else []
+        for obj_id in obj_order_cur:
             if not isinstance(obj_id, str):
                 continue
             cur_obj = cur_objs.get(obj_id)
             base_obj = base_objs.get(obj_id)
             if not isinstance(cur_obj, dict) or not isinstance(base_obj, dict):
-                continue  # present in only one
+                continue
             cur_type = cur_obj.get("type")
             base_type = base_obj.get("type")
             if cur_type != base_type:
@@ -152,27 +153,36 @@ def structure_changes(project) -> list[str]:
                         ids.append(str(b["id"]))
             return ids
 
-        b_cur = set(beat_ids(current.get("beats") if isinstance(current, dict) else []))
-        b_base = set(beat_ids(baseline.get("beats") if isinstance(baseline, dict) else []))
-        for bid in b_base - b_cur:
-            notes.append(f"{sid}: beat '{bid}' removed")
-        for bid in b_cur - b_base:
-            notes.append(f"{sid}: beat '{bid}' added")
+        b_cur_list = beat_ids(current.get("beats") if isinstance(current, dict) else [])
+        b_base_list = beat_ids(baseline.get("beats") if isinstance(baseline, dict) else [])
+        b_cur_set = set(b_cur_list)
+        b_base_set = set(b_base_list)
+        for bid in b_base_list:
+            if bid in b_base_set and bid not in b_cur_set:
+                notes.append(f"{sid}: beat '{bid}' removed")
+        for bid in b_cur_list:
+            if bid in b_cur_set and bid not in b_base_set:
+                notes.append(f"{sid}: beat '{bid}' added")
 
         def obj_ids(objs):
             ids = []
             if isinstance(objs, dict):
+                # preserve order in dict
                 for oid in objs.keys():
                     if isinstance(oid, str):
                         ids.append(oid)
             return ids
 
-        o_cur = set(obj_ids(current.get("objects") if isinstance(current, dict) else {}))
-        o_base = set(obj_ids(baseline.get("objects") if isinstance(baseline, dict) else {}))
-        for oid in o_base - o_cur:
-            notes.append(f"{sid}: object '{oid}' removed")
-        for oid in o_cur - o_base:
-            notes.append(f"{sid}: object '{oid}' added")
+        o_cur_list = obj_ids(current.get("objects") if isinstance(current, dict) else {})
+        o_base_list = obj_ids(baseline.get("objects") if isinstance(baseline, dict) else {})
+        o_cur_set = set(o_cur_list)
+        o_base_set = set(o_base_list)
+        for oid in o_base_list:
+            if oid in o_base_set and oid not in o_cur_set:
+                notes.append(f"{sid}: object '{oid}' removed")
+        for oid in o_cur_list:
+            if oid in o_cur_set and oid not in o_base_set:
+                notes.append(f"{sid}: object '{oid}' added")
     return notes
 
 
