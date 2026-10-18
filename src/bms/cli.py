@@ -18,10 +18,15 @@ def _ensure_baseline(project, scene_id: str) -> None:
 
         bl = baseline_mod.load_baseline(project, scene_id)
         if bl is None:
-            baseline_mod.init_baseline(project, scene_id)
+            try:
+                baseline_mod.init_baseline(project, scene_id)
+            except Exception as exc:
+                print(f"warning: could not create baseline for {scene_id}: {exc}", file=sys.stderr)
+                return
             print(f"note: created baseline for {scene_id} (no earlier baseline existed)")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"warning: could not create baseline for {scene_id}: {exc}", file=sys.stderr)
+        return
 
 
 def _cmd_new(args: argparse.Namespace) -> int:
@@ -218,7 +223,11 @@ def _cmd_report(args: argparse.Namespace) -> int:
     for sid in project.scene_ids():
         _ensure_baseline(project, sid)
     try:
+        from bms.tracking import report as report_mod
         path = report_mod.export_report(project, mark=not args.no_mark)
+    except report_mod.MarkingFailed as exc:
+        print(f"report written but baseline not marked: {exc}", file=sys.stderr)
+        return 2
     except ValueError as exc:
         if str(exc) == "no changes":
             print("No changes.")
@@ -226,10 +235,8 @@ def _cmd_report(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 64
     except Exception as exc:
-        # report files may have been written? spec says let marking errors propagate
-        # but export_report writes first; if mark raises after write, we need to report
-        print(f"report written but baseline not marked: {exc}", file=sys.stderr)
-        return 2
+        print(f"error: {exc}", file=sys.stderr)
+        return 64
     print(str(path))
     return 0
 

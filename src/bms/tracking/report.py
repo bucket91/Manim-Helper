@@ -7,6 +7,10 @@ from typing import Any, Optional
 from bms import __version__
 
 
+class MarkingFailed(Exception):
+    pass
+
+
 def _write_text(path: Path, text: str) -> None:
     Path(path).write_text(text, encoding="utf-8")
 
@@ -184,6 +188,6 @@ def export_report(project, mark: bool = True) -> Path:
                 from bms import jsonio
 
                 jsonio.save_json_atomic(project.root / ".bms" / "reasons.json", reasons)
-        except Exception:
-            pass
+        except Exception as exc:
+            raise MarkingFailed(str(exc)) from exc
     return ts_path

@@ -1,0 +1,195 @@
+{
+  "format_version": 1,
+  "scene_id": "DemoParabola",
+  "title": "Demo: latus rectum of a parabola",
+  "layout": "split60_40",
+  "objects": {
+    "q1": {
+      "type": "question_panel",
+      "num": 1,
+      "qmath": "y^2 = 8x",
+      "qtext": "উপকেন্দ্রিক লম্বের দৈর্ঘ্য কত?",
+      "options": [
+        "2",
+        "4",
+        "8",
+        "16"
+      ]
+    },
+    "eq1": {
+      "type": "mathtex",
+      "dy": 3.0,
+      "tex": "y^2 = 4ax",
+      "size": 44
+    },
+    "eq2": {
+      "type": "mathtex",
+      "dy": 2.0,
+      "tex": "4a = 8",
+      "size": 44,
+      "color": "YELLOW"
+    },
+    "hl": {
+      "type": "highlight_box",
+      "target": "eq2",
+      "color": "GREEN"
+    },
+    "note": {
+      "type": "text_bn",
+      "dy": 1.0,
+      "text": "এখানে এ সমান দুই",
+      "size": 30
+    },
+    "ax": {
+      "type": "axes",
+      "dy": -1.4,
+      "x_range": [
+        -1,
+        4,
+        1
+      ],
+      "y_range": [
+        -5,
+        5,
+        1
+      ],
+      "x_length": 5,
+      "y_length": 3
+    },
+    "gr_up": {
+      "type": "function_graph",
+      "axes": "ax",
+      "expr": "sqrt(8*x)",
+      "x_range": [
+        0,
+        3
+      ],
+      "color": "BLUE"
+    },
+    "gr_dn": {
+      "type": "function_graph",
+      "axes": "ax",
+      "expr": "-sqrt(8*x)",
+      "x_range": [
+        0,
+        3
+      ],
+      "color": "BLUE"
+    },
+    "burst": {
+      "type": "sparkle_burst",
+      "region": "solution",
+      "dx": 2,
+      "dy": 2,
+      "comment": "custom entry without code"
+    },
+    "tag": {
+      "type": "custom_label",
+      "region": "top",
+      "code": "mobj = Text('custom code demo', font_size=22, color=YELLOW)"
+    }
+  },
+  "beats": [
+    {
+      "id": "ask",
+      "narration": "এই প্রশ্নে অধিবৃত্তের উপকেন্দ্রিক লম্বের দৈর্ঘ্য জানতে চাওয়া হয়েছে।",
+      "steps": [
+        {
+          "anim": "FadeIn",
+          "targets": [
+            "q1"
+          ],
+          "shift": "LEFT",
+          "run_time": 0.6
+        },
+        {
+          "anim": "FadeIn",
+          "targets": [
+            "tag"
+          ],
+          "run_time": 0.4,
+          "with_previous": true
+        },
+        {
+          "anim": "Create",
+          "targets": [
+            "burst"
+          ],
+          "run_time": 0.4,
+          "with_previous": true
+        }
+      ]
+    },
+    {
+      "id": "method",
+      "narration": "আমরা জানি, ওয়াই বর্গ সমান চার এ এক্স হলে উপকেন্দ্রিক লম্বের দৈর্ঘ্য চার এ।",
+      "steps": [
+        {
+          "anim": "Write",
+          "targets": [
+            "eq1"
+          ],
+          "run_time": 1.2
+        },
+        {
+          "anim": "Write",
+          "targets": [
+            "eq2"
+          ],
+          "run_time": 1.0,
+          "at": 3.0
+        },
+        {
+          "anim": "Write",
+          "targets": [
+            "note"
+          ],
+          "run_time": 0.8
+        }
+      ]
+    },
+    {
+      "id": "result",
+      "narration": null,
+      "hold": 1.0,
+      "steps": [
+        {
+          "anim": "Create",
+          "targets": [
+            "hl"
+          ],
+          "run_time": 0.5
+        },
+        {
+          "anim": "pick_option",
+          "targets": [
+            "q1"
+          ],
+          "option": 2,
+          "run_time": 0.5
+        }
+      ]
+    },
+    {
+      "id": "graph",
+      "narration": "অধিবৃত্তটি এভাবে আঁকা যায়।",
+      "steps": [
+        {
+          "anim": "Create",
+          "targets": [
+            "ax"
+          ],
+          "run_time": 1.0
+        },
+        {
+          "anim": "Create",
+          "targets": [
+            "gr_up",
+            "gr_dn"
+          ],
+          "run_time": 1.5
+        }
+      ]
+    }
+  ]
+}

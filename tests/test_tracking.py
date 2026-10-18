@@ -31,7 +31,6 @@ def test_narration_edit_creates_change(tmp_path):
     src = tmp_path / "s.scene.json"
     _make_min_scene(src, "S", ["hello", "world"])
     proj.import_scene(src)
-    # edit
     s = proj.load_scene("S")
     s["beats"][0]["narration"] = "hi"
     proj.save_scene("S", s)
@@ -66,13 +65,11 @@ def test_object_edits_two_fields(tmp_path):
     }
     src.write_text(json.dumps(scene, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     proj.import_scene(src)
-    # edit options[2] and qmath
     s = proj.load_scene("Q")
     s["objects"]["panel"]["options"][2]["value"] = "C"
     s["objects"]["panel"]["qmath"] = "x^3"
     proj.save_scene("Q", s)
     changes = diff.compute_changes(proj)
-    # two object text field changes
     assert len(changes) == 2
     keys = {c.key for c in changes}
     assert "Q|object|panel|options[2].value" in keys
@@ -90,10 +87,10 @@ def test_unchanged_scene_no_changes(tmp_path):
 def test_nfc_does_not_create_change(tmp_path):
     proj = Project.create(tmp_path, "P")
     src = tmp_path / "s.scene.json"
-    _make_min_scene(src, "S", ["\u00e0"])  # a with grave
+    _make_min_scene(src, "S", ["\u00e0"])
     proj.import_scene(src)
     s = proj.load_scene("S")
-    s["beats"][0]["narration"] = "a\u0300"  # decomposed same char
+    s["beats"][0]["narration"] = "a\u0300"
     proj.save_scene("S", s)
     assert diff.compute_changes(proj) == []
 
@@ -101,17 +98,15 @@ def test_nfc_does_not_create_change(tmp_path):
 def test_pattern_counts_across_beats(tmp_path):
     proj = Project.create(tmp_path, "P")
     src = tmp_path / "s.scene.json"
-    # 4 beats with same narration change
-    _make_min_scene(src, "S", ["সরালে", "সরালে", "সরালে", "সরালে"])
+    _make_min_scene(src, "S", ["old", "old", "old", "old"])
     proj.import_scene(src)
     s = proj.load_scene("S")
     for b in s["beats"]:
-        b["narration"] = "সরল করলে"
+        b["narration"] = "new text"
     proj.save_scene("S", s)
     changes = diff.compute_changes(proj)
     assert len(changes) == 4
     pats = diff.find_patterns(changes)
-    # one pattern with count 4
     assert len(pats) == 1
     assert pats[0]["count"] == 4
 
@@ -143,7 +138,6 @@ def test_export_mark_keeps_original_and_clears_changes(tmp_path):
     out = report.export_report(proj, mark=True)
     assert out.exists()
     assert orig.read_bytes() == orig_before
-    # next changes should be empty
     assert diff.compute_changes(proj) == []
 
 
@@ -152,12 +146,10 @@ def test_failed_write_leaves_baseline_unmarked(tmp_path, monkeypatch):
     src = tmp_path / "s.scene.json"
     _make_min_scene(src, "S", ["a"])
     proj.import_scene(src)
-    # baseline now equals current
     base_before = (proj.root / ".bms" / "baseline" / "S.json").read_bytes()
     s = proj.load_scene("S")
     s["beats"][0]["narration"] = "b"
     proj.save_scene("S", s)
-    # monkeypatch Path.write_text to raise
     from pathlib import Path as _Path
 
     def boom(self, *a, **k):
@@ -168,5 +160,4 @@ def test_failed_write_leaves_baseline_unmarked(tmp_path, monkeypatch):
         report.export_report(proj, mark=True)
     except IOError:
         pass
-    # baseline should remain unchanged (unmarked)
     assert (proj.root / ".bms" / "baseline" / "S.json").read_bytes() == base_before
